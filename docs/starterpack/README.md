@@ -35,7 +35,7 @@ curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
 ```
 mkdir -p go/src/earthcube.org/Project418
 cd go/src/earthcube.org/Project418
-git clone https://github.com/craig-willis/gleaner -b v2.0.4
+git clone https://github.com/craig-willis/gleaner -b eco
 ```
 
 Build gleaner binary
