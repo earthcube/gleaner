@@ -63,7 +63,7 @@ func GetMillObjects(mc *minio.Client, prefix string) []Entry {
 
 	}
 
-	fmt.Println(len(entries))
+	fmt.Printf("Number of entries found %d\n", len(entries))
 	// multiCall(entries)
 
 	return entries

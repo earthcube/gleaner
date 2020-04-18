@@ -56,18 +56,13 @@ func SpatialFrame(jsonld string) []SpatialFrameRes {
 	frame := map[string]interface{}{
 		"@context":        "http://schema.org/",
 		"@explicit":       true,
-		"@type":           "Dataset",
-		"@id":             "",
-		"spatialCoverage": map[string]interface{}{
-			"@type":           "Place",
-			"geo":             map[string]interface{}{},
-			"subjectOf":       map[string]interface{}{
-				"@type":           "CreativeWork",
-				"@explicit":       true,
-				"fileFormat":      "",
-				"text":            "",
-			},
-		},
+		//"@type":           "Dataset",
+                "spatialCoverage": []interface{}{
+                       map[string]interface{}{
+                               "@type": "Place",
+                               "geo":   map[string]interface{}{},
+                       },
+                },
 	}
 
 	var myInterface interface{}
