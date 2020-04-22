@@ -1,9 +1,15 @@
+FROM alpine:latest as certs
+RUN apk --update add ca-certificates
+
 # Start from scratch image and add in a precompiled binary
 # CGO_ENABLED=0 env  go build .
 # docker build  --tag="opencoredata/ocdweb:0.9.4"  .
 # docker run -d -p 9900:9900  opencoredata/ocdweb:0.9.4
 #FROM alpine
 FROM scratch
+
+# Need certs for https requests
+COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 # Add in the static elements (could also mount these from local filesystem)
 ADD ./cmd/gleaner/gleaner / 
