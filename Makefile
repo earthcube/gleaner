@@ -1,6 +1,7 @@
 BINARY := gleaner
 VERSION :=`cat VERSION`
 .DEFAULT_GOAL := gleaner
+ORG := geocodes
 
 gleaner:
 	cd cmd/$(BINARY) ; \
@@ -21,13 +22,13 @@ glcon:
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 env go build -o glcon
 
 docker:
-	docker build  --tag="nsfearthcube/gleaner:$(VERSION)"  --file=./build/Dockerfile . ; \
-	docker tag nsfearthcube/gleaner:$(VERSION) nsfearthcube/gleaner:latest
+	docker build  --tag="$(ORG)/gleaner:$(VERSION)"  --file=./build/Dockerfile . ; \
+	docker tag $(ORG)/gleaner:$(VERSION) $(ORG)/gleaner:latest
 
 removeimage:
-	docker rmi --force nsfearthcube/gleaner:$(VERSION)
-	docker rmi --force nsfearthcube/gleaner:latest
+	docker rmi --force $(ORG)/gleaner:$(VERSION)
+	docker rmi --force $(ORG)/gleaner:latest
 
 publish: docker
-	docker push nsfearthcube/gleaner:$(VERSION) ; \
-	docker push nsfearthcube/gleaner:latest
+	docker push $(ORG)/gleaner:$(VERSION) ; \
+	docker push $(ORG)/gleaner:latest

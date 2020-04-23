@@ -1,0 +1,22 @@
+---
+gleaner:
+  summon: true 
+  mill: true
+  runid: eco
+millers:
+  spatial: true
+  organic: true
+  graph: true
+  mock: false
+  shacl: false
+  tika: false
+  fdptika: false
+  fdptikajena: false
+  fdpgraph: false
+  prov: false
+sources:
+- name: getiedadataorg
+  logo: http://geodex.org/images/logos/ieda_maplogo.png
+  url: http://get.iedadata.org/doi/xml-sitemap.php
+  sitemapformat: xml
+  active: true
