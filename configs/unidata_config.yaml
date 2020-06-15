@@ -4,7 +4,7 @@ gleaner:
   mill: false
   runid: unidataT2  # this will be the bucket the output is placed in...
 summoner:
-  mode: diff  # one of diff: look for difference or full: delete old objects and replace
+  mode:  full # one of diff: look for difference or full: delete old objects and replace
 millers:
   mock: false
   graph: true

@@ -167,6 +167,7 @@ func graphSplit(gb *common.Buffer, bucketname string) (string, string, error) {
 	for scanner.Scan() {
 		if len(scanner.Text()) > 2 {
 			nq, e := goodTriples(scanner.Text(), fmt.Sprintf("http://earthcube.org/%s", bucketname))
+			//log.Printf(nq)
 			if e == nil {
 				_, err = good.Write([]byte(nq))
 			}
@@ -189,7 +190,7 @@ func goodTriples(f, c string) (string, error) {
 	dec := rdf.NewTripleDecoder(strings.NewReader(f), rdf.NTriples)
 	triple, err := dec.Decode()
 	if err != nil {
-		log.Printf("Error decoding triples: %v\n", err)
+		log.Printf("Error decoding triples: %v (%s)\n", err, string(f))
 		return "", err
 	}
 
@@ -228,6 +229,7 @@ func kvclient(name string) *bolt.DB {
 	}
 	defer os.RemoveAll(dir)
 
+	log.Printf("%s, %s", dir, name)
 	db, err := bolt.Open(fmt.Sprintf("%s/%s.db", dir, name), 0600, nil)
 	if err != nil {
 		log.Fatal(err)

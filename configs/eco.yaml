@@ -1,22 +1,27 @@
 ---
 gleaner:
-  summon: true 
+  summon: false 
   mill: true
   runid: eco
 millers:
-  spatial: true
-  organic: true
+  spatial: false
+  organic: false
   graph: true
   mock: false
   shacl: false
-  tika: false
+  tika:  false
   fdptika: false
   fdptikajena: false
   fdpgraph: false
   prov: false
 sources:
-- name: getiedadataorg
-  logo: http://geodex.org/images/logos/ieda_maplogo.png
-  url: http://get.iedadata.org/doi/xml-sitemap.php
-  sitemapformat: xml
-  active: true
+  - name: getiedadataorg
+    logo: http://geodex.org/images/logos/ieda_maplogo.png
+    url: http://get.iedadata.org/doi/xml-sitemap.php
+    sitemapformat: xml
+    active: true
+        #- name: wwwhydroshare
+        #logo: http://geodex.org/images/logos/cuahsiHydroshare.png
+        #url: https://www.hydroshare.org/sitemap-resources.xml
+        #sitemapformat: xml
+        #active: true
