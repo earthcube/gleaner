@@ -3,10 +3,13 @@ package millerutils
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 
 	"earthcube.org/Project418/gleaner/internal/common"
@@ -26,7 +29,7 @@ func Jsl2graph(bucketname, key, urlval, sha1val, jsonld string, gb *common.Buffe
 		log.Printf("error in the jsonld write... %v\n", err)
 	}
 
-	rdf := GlobalUniqueBNodes(nq) // unique bnodes
+	rdf := DeterministicBNodes(nq, urlval) // deterministic bnodes based on node properties
 	lpt := LPtriples(rdf, urlval) // associate landing page URL with all unique subject URIs and subject bnodes in graph
 
 	nt := fmt.Sprint("\n" + rdf + "\n" + lpt)
@@ -177,6 +180,170 @@ func GlobalUniqueBNodes(nq string) string {
 	}
 
 	return string(filebytes)
+}
+
+// predicates used for deterministic blank node identification, in priority order
+var bnodeIDPredicates = []string{
+	"http://schema.org/contentUrl",
+	"https://schema.org/contentUrl",
+	"http://schema.org/url",
+	"https://schema.org/url",
+}
+
+// predicates used as secondary identifiers (combined with rdf:type)
+var bnodeLabelPredicates = []string{
+	"http://schema.org/name",
+	"https://schema.org/name",
+	"http://schema.org/title",
+	"https://schema.org/title",
+}
+
+const rdfTypePredicate = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+
+// bnodeProperties holds the parsed predicate-object pairs for a blank node
+type bnodeProperties struct {
+	pairs    map[string][]string // predicate -> list of object values
+	rdfType  string              // cached rdf:type value
+}
+
+// DeterministicBNodes replaces blank node identifiers with deterministic IDs
+// derived from the node's properties. This ensures the same JSON-LD document
+// always produces the same blank node identifiers.
+//
+// Priority for ID generation:
+//  1. schema:contentUrl or schema:url — most unique, points to a specific resource
+//  2. schema:name + rdf:type — name scoped by type
+//  3. schema:title + rdf:type — alternate label scoped by type
+//  4. Hash of all predicate+object pairs — fallback for nodes with other properties
+//  5. Random xid — last resort for nodes with no properties at all
+func DeterministicBNodes(nq string, sourceURL string) string {
+	// First pass: collect all properties for each blank node
+	bnodeProps := make(map[string]*bnodeProperties)
+	scanner := bufio.NewScanner(strings.NewReader(nq))
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		split := strings.Split(line, " ")
+		if len(split) < 3 {
+			continue
+		}
+
+		subj := split[0]
+		pred := unwrapURI(split[1])
+		obj := strings.Join(split[2:len(split)-1], " ") // everything except the trailing " ."
+
+		if strings.HasPrefix(subj, "_:") {
+			if _, ok := bnodeProps[subj]; !ok {
+				bnodeProps[subj] = &bnodeProperties{pairs: make(map[string][]string)}
+			}
+			props := bnodeProps[subj]
+			props.pairs[pred] = append(props.pairs[pred], obj)
+			if pred == rdfTypePredicate {
+				props.rdfType = obj
+			}
+		}
+
+		// Also track blank nodes that appear only as objects
+		if strings.HasPrefix(obj, "_:") {
+			if _, ok := bnodeProps[obj]; !ok {
+				bnodeProps[obj] = &bnodeProperties{pairs: make(map[string][]string)}
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("error scanning nquads for deterministic bnodes: %v", err)
+		return GlobalUniqueBNodes(nq) // fall back to random
+	}
+
+	// Second pass: generate deterministic IDs
+	m := make(map[string]string)
+	for bnode, props := range bnodeProps {
+		newID := generateDeterministicID(props, sourceURL)
+		m[bnode] = newID
+	}
+
+	// Replace all blank node references
+	filebytes := []byte(nq)
+	for k, v := range m {
+		filebytes = bytes.Replace(filebytes, []byte(k), []byte(v), -1)
+	}
+
+	return string(filebytes)
+}
+
+// unwrapURI removes surrounding angle brackets from a URI, e.g. "<http://...>" -> "http://..."
+func unwrapURI(s string) string {
+	if strings.HasPrefix(s, "<") && strings.HasSuffix(s, ">") {
+		return s[1 : len(s)-1]
+	}
+	return s
+}
+
+// generateDeterministicID creates a deterministic blank node ID from node properties.
+func generateDeterministicID(props *bnodeProperties, sourceURL string) string {
+	// Priority 1: contentUrl or url
+	for _, pred := range bnodeIDPredicates {
+		if vals, ok := props.pairs[pred]; ok && len(vals) > 0 {
+			return hashToBNode(sourceURL, pred, vals[0])
+		}
+	}
+
+	// Priority 2 & 3: name or title scoped by rdf:type
+	for _, pred := range bnodeLabelPredicates {
+		if vals, ok := props.pairs[pred]; ok && len(vals) > 0 {
+			scope := props.rdfType
+			if scope == "" {
+				scope = "_untyped_"
+			}
+			return hashToBNode(sourceURL, pred+"|"+scope, vals[0])
+		}
+	}
+
+	// Priority 4: hash all predicate+object pairs
+	if len(props.pairs) > 0 {
+		return hashAllPairs(props, sourceURL)
+	}
+
+	// Priority 5: fallback to random xid (node has no properties at all)
+	guid := xid.New()
+	return fmt.Sprintf("_:b%s", guid.String())
+}
+
+// hashToBNode produces a deterministic blank node ID from a key string.
+func hashToBNode(parts ...string) string {
+	h := sha256.New()
+	for _, p := range parts {
+		h.Write([]byte(p))
+		h.Write([]byte("|"))
+	}
+	sum := hex.EncodeToString(h.Sum(nil))
+	return fmt.Sprintf("_:b%s", sum[:20]) // 20 hex chars = 80 bits, plenty of uniqueness
+}
+
+// hashAllPairs hashes all predicate-object pairs for a blank node in sorted order.
+func hashAllPairs(props *bnodeProperties, sourceURL string) string {
+	// Build a sorted list of "predicate=object" strings for determinism
+	var entries []string
+	for pred, vals := range props.pairs {
+		for _, val := range vals {
+			entries = append(entries, pred+"="+val)
+		}
+	}
+	sort.Strings(entries)
+
+	h := sha256.New()
+	h.Write([]byte(sourceURL))
+	h.Write([]byte("|"))
+	for _, entry := range entries {
+		h.Write([]byte(entry))
+		h.Write([]byte("|"))
+	}
+	sum := hex.EncodeToString(h.Sum(nil))
+	return fmt.Sprintf("_:b%s", sum[:20])
 }
 
 // NewinitBleve Initialize the text index  // this function needs some attention (of course they all do)
