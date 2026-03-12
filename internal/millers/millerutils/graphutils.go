@@ -200,6 +200,14 @@ var bnodeLabelPredicates = []string{
 
 const rdfTypePredicate = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
+// GleanerBaseURI is the base URI for gleaner-generated skolemized node identifiers.
+// Following the W3C RDF 1.1 recommendation, blank nodes are skolemized into
+// well-known URIs. The schema.org type is included in the path so that the
+// origin of the identifier (gleaner) and the node type are immediately visible.
+//
+// Example: <https://gleaner.io/.well-known/genid/DataDownload/a1b2c3d4...>
+const GleanerBaseURI = "https://gleaner.io/.well-known/genid"
+
 // bnodeProperties holds the parsed predicate-object pairs for a blank node
 type bnodeProperties struct {
 	pairs    map[string][]string // predicate -> list of object values
@@ -283,45 +291,69 @@ func unwrapURI(s string) string {
 	return s
 }
 
-// generateDeterministicID creates a deterministic blank node ID from node properties.
+// generateDeterministicID creates a deterministic skolemized URI from node properties.
+// The URI includes the schema.org type name for easy identification of gleaner-minted nodes.
 func generateDeterministicID(props *bnodeProperties, sourceURL string) string {
+	typeName := extractTypeName(props.rdfType)
+
 	// Priority 1: contentUrl or url
 	for _, pred := range bnodeIDPredicates {
 		if vals, ok := props.pairs[pred]; ok && len(vals) > 0 {
-			return hashToBNode(sourceURL, pred, vals[0])
+			return skolemURI(typeName, hashParts(sourceURL, pred, vals[0]))
 		}
 	}
 
 	// Priority 2 & 3: name or title scoped by rdf:type
 	for _, pred := range bnodeLabelPredicates {
 		if vals, ok := props.pairs[pred]; ok && len(vals) > 0 {
-			scope := props.rdfType
-			if scope == "" {
-				scope = "_untyped_"
-			}
-			return hashToBNode(sourceURL, pred+"|"+scope, vals[0])
+			return skolemURI(typeName, hashParts(sourceURL, pred+"|"+props.rdfType, vals[0]))
 		}
 	}
 
 	// Priority 4: hash all predicate+object pairs
 	if len(props.pairs) > 0 {
-		return hashAllPairs(props, sourceURL)
+		return skolemURI(typeName, hashAllPairs(props, sourceURL))
 	}
 
 	// Priority 5: fallback to random xid (node has no properties at all)
 	guid := xid.New()
-	return fmt.Sprintf("_:b%s", guid.String())
+	return skolemURI(typeName, guid.String())
 }
 
-// hashToBNode produces a deterministic blank node ID from a key string.
-func hashToBNode(parts ...string) string {
+// extractTypeName returns the short type name from a full schema.org URI.
+// e.g. "<http://schema.org/DataDownload>" -> "DataDownload"
+// If the type is empty or unrecognized, returns "Unknown".
+func extractTypeName(rdfType string) string {
+	if rdfType == "" {
+		return "Unknown"
+	}
+	// Strip angle brackets if present
+	t := unwrapURI(rdfType)
+	// Take the last path segment
+	if idx := strings.LastIndex(t, "/"); idx >= 0 {
+		return t[idx+1:]
+	}
+	if idx := strings.LastIndex(t, "#"); idx >= 0 {
+		return t[idx+1:]
+	}
+	return t
+}
+
+// skolemURI builds a well-known skolem URI with the type name and hash.
+// e.g. <https://gleaner.io/.well-known/genid/DataDownload/a1b2c3d4...>
+func skolemURI(typeName, hash string) string {
+	return fmt.Sprintf("<%s/%s/%s>", GleanerBaseURI, typeName, hash)
+}
+
+// hashParts produces a deterministic hex hash from a set of strings.
+func hashParts(parts ...string) string {
 	h := sha256.New()
 	for _, p := range parts {
 		h.Write([]byte(p))
 		h.Write([]byte("|"))
 	}
 	sum := hex.EncodeToString(h.Sum(nil))
-	return fmt.Sprintf("_:b%s", sum[:20]) // 20 hex chars = 80 bits, plenty of uniqueness
+	return sum[:20] // 20 hex chars = 80 bits, plenty of uniqueness
 }
 
 // hashAllPairs hashes all predicate-object pairs for a blank node in sorted order.
@@ -343,7 +375,7 @@ func hashAllPairs(props *bnodeProperties, sourceURL string) string {
 		h.Write([]byte("|"))
 	}
 	sum := hex.EncodeToString(h.Sum(nil))
-	return fmt.Sprintf("_:b%s", sum[:20])
+	return sum[:20]
 }
 
 // NewinitBleve Initialize the text index  // this function needs some attention (of course they all do)

@@ -60,53 +60,52 @@ func TestDeterministicBNodes_NoOriginalBNodes(t *testing.T) {
 	}
 }
 
+func TestDeterministicBNodes_ProducesURIs(t *testing.T) {
+	sourceURL := "http://example.org/page1"
+	result := DeterministicBNodes(nqWithContentURL, sourceURL)
+
+	if !strings.Contains(result, GleanerBaseURI) {
+		t.Errorf("expected skolemized URI with base %s, got:\n%s", GleanerBaseURI, result)
+	}
+}
+
+func TestDeterministicBNodes_ContentURLIncludesType(t *testing.T) {
+	sourceURL := "http://example.org/page1"
+	result := DeterministicBNodes(nqWithContentURL, sourceURL)
+
+	if !strings.Contains(result, "/DataDownload/") {
+		t.Errorf("expected type 'DataDownload' in URI, got:\n%s", result)
+	}
+}
+
+func TestDeterministicBNodes_NameIncludesType(t *testing.T) {
+	sourceURL := "http://example.org/page1"
+	result := DeterministicBNodes(nqWithName, sourceURL)
+
+	if !strings.Contains(result, "/Person/") {
+		t.Errorf("expected type 'Person' in URI, got:\n%s", result)
+	}
+}
+
+func TestDeterministicBNodes_TitleIncludesType(t *testing.T) {
+	sourceURL := "http://example.org/page1"
+	result := DeterministicBNodes(nqWithTitle, sourceURL)
+
+	if !strings.Contains(result, "/CreativeWork/") {
+		t.Errorf("expected type 'CreativeWork' in URI, got:\n%s", result)
+	}
+}
+
 func TestDeterministicBNodes_DifferentSourceURLs(t *testing.T) {
 	result1 := DeterministicBNodes(nqWithContentURL, "http://example.org/page1")
 	result2 := DeterministicBNodes(nqWithContentURL, "http://example.org/page2")
 
-	// Extract the generated bnode IDs
-	id1 := extractBNodeID(result1)
-	id2 := extractBNodeID(result2)
+	// Extract the generated URIs
+	uri1 := extractGenID(result1)
+	uri2 := extractGenID(result2)
 
-	if id1 == id2 {
-		t.Errorf("different source URLs should produce different bnode IDs, got same: %s", id1)
-	}
-}
-
-func TestDeterministicBNodes_ContentURLPriority(t *testing.T) {
-	sourceURL := "http://example.org/page1"
-	result := DeterministicBNodes(nqWithContentURL, sourceURL)
-
-	// Should be deterministic and not contain original _:b0
-	if strings.Contains(result, "_:b0") {
-		t.Error("blank node was not replaced")
-	}
-
-	// Verify it's a hash-based ID (starts with _:b followed by hex)
-	id := extractBNodeID(result)
-	if !strings.HasPrefix(id, "_:b") {
-		t.Errorf("expected _:b prefix, got: %s", id)
-	}
-	if len(id) < 10 {
-		t.Errorf("expected longer deterministic ID, got: %s", id)
-	}
-}
-
-func TestDeterministicBNodes_NameFallback(t *testing.T) {
-	sourceURL := "http://example.org/page1"
-	result := DeterministicBNodes(nqWithName, sourceURL)
-
-	if strings.Contains(result, "_:b0") {
-		t.Error("blank node was not replaced using name fallback")
-	}
-}
-
-func TestDeterministicBNodes_TitleFallback(t *testing.T) {
-	sourceURL := "http://example.org/page1"
-	result := DeterministicBNodes(nqWithTitle, sourceURL)
-
-	if strings.Contains(result, "_:b0") {
-		t.Error("blank node was not replaced using title fallback")
+	if uri1 == uri2 {
+		t.Errorf("different source URLs should produce different URIs, got same: %s", uri1)
 	}
 }
 
@@ -116,6 +115,10 @@ func TestDeterministicBNodes_GenericPropsFallback(t *testing.T) {
 
 	if strings.Contains(result, "_:b0") {
 		t.Error("blank node was not replaced using generic properties fallback")
+	}
+
+	if !strings.Contains(result, "/Thing/") {
+		t.Errorf("expected type 'Thing' in fallback URI, got:\n%s", result)
 	}
 
 	// Should still be deterministic
@@ -133,19 +136,12 @@ func TestDeterministicBNodes_MultipleBNodes(t *testing.T) {
 		t.Error("not all blank nodes were replaced")
 	}
 
-	// The two different blank nodes should get different IDs
-	lines := strings.Split(strings.TrimSpace(result), "\n")
-	bnodes := make(map[string]bool)
-	for _, line := range lines {
-		parts := strings.Split(line, " ")
-		for _, p := range parts {
-			if strings.HasPrefix(p, "_:b") {
-				bnodes[p] = true
-			}
-		}
+	// Should contain both type segments
+	if !strings.Contains(result, "/DataDownload/") {
+		t.Error("missing DataDownload type in URI")
 	}
-	if len(bnodes) < 2 {
-		t.Errorf("expected at least 2 distinct bnode IDs, got %d: %v", len(bnodes), bnodes)
+	if !strings.Contains(result, "/Person/") {
+		t.Error("missing Person type in URI")
 	}
 }
 
@@ -153,9 +149,14 @@ func TestDeterministicBNodes_NoPropsNode(t *testing.T) {
 	sourceURL := "http://example.org/page1"
 	result := DeterministicBNodes(nqNoProps, sourceURL)
 
-	// Should still replace the blank node (with random fallback)
+	// Should still replace the blank node
 	if strings.Contains(result, "_:b0") {
 		t.Error("blank node with no properties was not replaced")
+	}
+
+	// Node with no type gets "Unknown"
+	if !strings.Contains(result, "/Unknown/") {
+		t.Errorf("expected 'Unknown' type for property-less node, got:\n%s", result)
 	}
 }
 
@@ -163,6 +164,24 @@ func TestDeterministicBNodes_EmptyInput(t *testing.T) {
 	result := DeterministicBNodes("", "http://example.org/page1")
 	if result != "" {
 		t.Errorf("expected empty output for empty input, got: %s", result)
+	}
+}
+
+func TestExtractTypeName(t *testing.T) {
+	tests := []struct {
+		input, expected string
+	}{
+		{"<http://schema.org/DataDownload>", "DataDownload"},
+		{"<https://schema.org/Person>", "Person"},
+		{"<http://www.w3.org/1999/02/22-rdf-syntax-ns#Class>", "Class"},
+		{"", "Unknown"},
+		{"SomePlainValue", "SomePlainValue"},
+	}
+	for _, tc := range tests {
+		got := extractTypeName(tc.input)
+		if got != tc.expected {
+			t.Errorf("extractTypeName(%q) = %q, want %q", tc.input, got, tc.expected)
+		}
 	}
 }
 
@@ -191,15 +210,15 @@ func TestGlobalUniqueBNodes_StillWorks(t *testing.T) {
 	}
 }
 
-// extractBNodeID extracts the first blank node ID from an N-Quads string
-func extractBNodeID(nq string) string {
-	for _, line := range strings.Split(nq, "\n") {
-		parts := strings.Split(line, " ")
-		for _, p := range parts {
-			if strings.HasPrefix(p, "_:b") && len(p) > 4 {
-				return p
-			}
-		}
+// extractGenID extracts the first gleaner genid URI from an N-Quads string
+func extractGenID(nq string) string {
+	start := strings.Index(nq, "<"+GleanerBaseURI)
+	if start < 0 {
+		return ""
 	}
-	return ""
+	end := strings.Index(nq[start:], ">")
+	if end < 0 {
+		return ""
+	}
+	return nq[start : start+end+1]
 }
